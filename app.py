@@ -27,6 +27,14 @@ onnx.checker.check_model(model)
 print("Preparing backend", flush=True)
 rep = backend.prepare(model, device="CUDA:0")  # or "CPU"
 
+# Datasets have moved. Need this until torchvision 0.9.1.
+datasets.MNIST.urls = [
+    'https://ossci-datasets.s3.amazonaws.com/mnist/train-images-idx3-ubyte.gz',
+    'https://ossci-datasets.s3.amazonaws.com/mnist/train-labels-idx1-ubyte.gz',
+    'https://ossci-datasets.s3.amazonaws.com/mnist/t10k-images-idx3-ubyte.gz',
+    'https://ossci-datasets.s3.amazonaws.com/mnist/t10k-labels-idx1-ubyte.gz',
+]
+
 print("Setup transform",  flush=True)
 transform = transforms.Compose([transforms.ToTensor(),
                                 transforms.Normalize((0.5,), (0.5,)),
@@ -38,8 +46,9 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=64, shuffle=False)
 images, labels = next(iter(testloader))
 images = images.view(images.shape[0], -1)
 image_count = images.size()[0]
+print("Image count: {0}".format(image_count), flush=True)
 end = time.time()
-print("Loading time: {0:f} secs)".format(end - start))
+print("Loading time: {0:f} secs".format(end - start), flush=True)
 
 
 # API Handler for MNIST test images
@@ -59,17 +68,26 @@ class MyHandler(BaseHTTPRequestHandler):
                     predicted = int(np.argmax(outputs))
                     payload['predicted'] = predicted
                     body = json.dumps(payload)
+                    print(body, flush=True)
                     self.send_response(200)
                     self.end_headers()
                     self.wfile.write(bytes(body, "utf8"))
+                else:
+                    print("Out of range", flush=True)
+                    self.send_response(404)
+                    self.end_headers()
+                    body = "No index of that value in dataset"
+                    self.wfile.write(bytes(body, "utf8"))
             except (IndexError, ValueError):
+                print("Exception", flush=True)
                 self.send_response(404)
                 self.end_headers()
                 body = "Not found. Invoke using the form /mnist/<index of test image>. For example, /mnist/24"
                 self.wfile.write(bytes(body, "utf8"))
 
         else:
-            self.send_response(400)
+            print("Path not recognised. Probably health check", flush=True)
+            self.send_response(200)
             self.end_headers()
             body = "This service verifies a model using the MNIST Test data set. Invoke using the form /mnist/<index of test image>. For example, /mnist/24"
             self.wfile.write(bytes(body, "utf8"))
@@ -77,7 +95,7 @@ class MyHandler(BaseHTTPRequestHandler):
 
 try:
     server = HTTPServer(('', PORT_NUMBER), MyHandler)
-    print('Started httpserver on port', PORT_NUMBER)
+    print('Started httpserver on port', PORT_NUMBER, flush=True)
     server.serve_forever()
 
 except KeyboardInterrupt:
